@@ -17,6 +17,7 @@
 import collections
 import re
 from typing import List, Union, Tuple
+from tqdm import tqdm
 
 from phonemizer.utils import str2list
 
@@ -136,54 +137,59 @@ class Punctuation:
         return preserved_line + [line], marks
 
     @classmethod
-    def restore(cls, text: Union[str, List[str]], marks: List[_MarkIndex]) -> List[str]:
-        """Restore punctuation in a text.
+    def restore(cls, text: Union[str, List[str]], marks: List[_MarkIndex]):
+        text = str2list(text)
+        punctuated_text = []
+        pos = 0
+        with tqdm() as pbar:
+            while text or marks:
+                if not marks:
+                    merged_text = ''.join(text)
+                    punctuated_text.append(merged_text)
+                    text = []
+                elif not text:
+                    # nothing has been phonemized, returns the marks alone, with internal
+                    # spaces replaced by the word separator
+                    merged_marks = [''.join(m.mark for m in marks)]
+                    # if strip is False, ensure the final mark ends with a word separator
+                    punctuated_text.append(merged_marks)
+                    marks = []
 
-        This is the reverse operation of Punctuation.preserve(). It takes a
-        list of punctuated chunks and a list of punctuation marks. It returns a
-        a punctuated text as a list:
+                else:
+                    current_mark = marks[0]
+                    if current_mark.index == pos:
 
-            ['hello', 'my world'], [',', '!'] -> ['hello, my world!']
+                        # place the current mark here
+                        mark = marks[0]
+                        marks = marks[1:]
+                        # replace internal spaces in the current mark with the word separator
+                        text[0] = text[0].rstrip()
+                        # remove the word last separator from the current word
+                        if current_mark.position == 'B':
+                            text[0] = mark.mark + text[0]
+                        elif current_mark.position == 'E':
+                            punctuated_text.append(text[0] + mark.mark + '')
+                            text = text[1:]
+                            pos = pos + 1
+                        elif current_mark.position == 'A':
+                            punctuated_text.append(mark.mark + '')
+                            pos = pos + 1
+                        else:
+                            # position == 'I'
+                            if len(text) == 1:  # pragma: nocover
+                                # a corner case where the final part of an intermediate
+                                # mark (I) has not been phonemized
+                                text[0] = text[0] + mark.mark
+                            else:
+                                first_word = text[0]
+                                text = text[1:]
+                                text[0] = first_word + mark.mark + text[0]
 
-        """
-        return cls._restore_aux(str2list(text), marks, 0)
+                    else:
+                        punctuated_text.append(text[0])
+                        text = text[1:]
+                        pos = pos + 1
+            pbar.update()
 
-    @classmethod
-    def _restore_current(cls, current: _MarkIndex, text: List[str], marks: List[_MarkIndex], num) -> List[str]:
-        """Auxiliary method for Punctuation._restore_aux()"""
-        text[0] = text[0].rstrip()
-        if current.position == 'B':
-            return cls._restore_aux(
-                [current.mark + text[0]] + text[1:], marks[1:], num)
 
-        if current.position == 'E':
-            return [text[0] + current.mark] + cls._restore_aux(
-                text[1:], marks[1:], num + 1)
-
-        if current.position == 'A':
-            return [current.mark] + cls._restore_aux(text, marks[1:], num + 1)
-
-        # position == 'I'
-        if len(text) == 1:  # pragma: nocover
-            # a corner case where the final part of an intermediate
-            # mark (I) has not been phonemized
-            return cls._restore_aux([text[0] + current.mark], marks[1:], num)
-
-        return cls._restore_aux(
-            [text[0] + current.mark + text[1]] + text[2:], marks[1:], num)
-
-    @classmethod
-    def _restore_aux(cls, text: List[str], marks: List[_MarkIndex], num: int) -> List[str]:
-        """Auxiliary method for Punctuation.restore()"""
-        if not marks:
-            return text
-
-        # nothing have been phonemized, returns the marks alone
-        if not text:
-            return [''.join(m.mark for m in marks)]
-
-        current = marks[0]
-        if current.index == num:  # place the current mark here
-            return cls._restore_current(current, text, marks, num)
-
-        return [text[0]] + cls._restore_aux(text[1:], marks, num + 1)
+        return punctuated_text
