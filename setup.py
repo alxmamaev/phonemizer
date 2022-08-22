@@ -39,8 +39,7 @@ setuptools.setup(
                       'segments',
                       'attrs>=18.1',
                       'dlinfo',
-                      'typing-extensions',
-                      'tqdm'],
+                      'typing-extensions'],
 
     # include Python code and any files in phonemizer/share
     packages=setuptools.find_packages(),
